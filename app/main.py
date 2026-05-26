@@ -1,4 +1,5 @@
 import json
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
@@ -8,12 +9,13 @@ from app.models import Server, SourceType
 from app.process_manager import manager
 from app.schemas import LogResponse, ServerCreate, ServerOut, ServerUpdate
 
-app = FastAPI(title="moles-mcp-proxy-manager")
-
-
-@app.on_event("startup")
-def on_startup() -> None:
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(title="moles-mcp-proxy-manager", lifespan=lifespan)
 
 
 def validate_source(payload: ServerCreate | ServerUpdate, source_type: SourceType) -> None:
@@ -157,7 +159,7 @@ async def refresh_server(server_id: int, db: Session = Depends(get_db)) -> Serve
         raise HTTPException(status_code=404, detail="Server not found")
 
     update_status = await manager.update_server(server)
-    if server.source_type == SourceType.OPENAPI:
+    if SourceType(server.source_type) == SourceType.OPENAPI:
         server.last_health_status = update_status
     else:
         server.status = "running"

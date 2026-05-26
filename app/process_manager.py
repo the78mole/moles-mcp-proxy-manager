@@ -3,6 +3,7 @@ import json
 import os
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from json import JSONDecodeError
 from typing import Deque
 
 import httpx
@@ -38,10 +39,19 @@ class ProcessManager:
             self._history[server_id].append(text)
 
     @staticmethod
+    def _require_value(value: str | None, field_name: str) -> str:
+        if not value:
+            raise ValueError(f"{field_name} is required for this source type")
+        return value
+
+    @staticmethod
     def build_run_command(server: Server) -> list[str]:
         if server.source_type == SourceType.PYPI:
-            return ["uvx", "mcpo", "--port", str(server.target_port), "--", "uvx", server.package_name or ""]
+            package_name = ProcessManager._require_value(server.package_name, "package_name")
+            return ["uvx", "mcpo", "--port", str(server.target_port), "--", "uvx", package_name]
         if server.source_type == SourceType.GITHUB:
+            git_url = ProcessManager._require_value(server.git_url, "git_url")
+            executable_name = ProcessManager._require_value(server.executable_name, "executable_name")
             return [
                 "uvx",
                 "mcpo",
@@ -50,10 +60,12 @@ class ProcessManager:
                 "--",
                 "uvx",
                 "--from",
-                f"git+{server.git_url}",
-                server.executable_name or "",
+                f"git+{git_url}",
+                executable_name,
             ]
         if server.source_type == SourceType.LOCAL:
+            local_path = ProcessManager._require_value(server.local_path, "local_path")
+            executable_name = ProcessManager._require_value(server.executable_name, "executable_name")
             return [
                 "uvx",
                 "mcpo",
@@ -62,16 +74,19 @@ class ProcessManager:
                 "--",
                 "uvx",
                 "--from",
-                server.local_path or "",
-                server.executable_name or "",
+                local_path,
+                executable_name,
             ]
         raise ValueError("OPENAPI servers do not support subprocess run commands")
 
     @staticmethod
     def build_refresh_command(server: Server) -> list[str]:
         if server.source_type == SourceType.PYPI:
-            return ["uvx", "--refresh", "mcpo", "--", "uvx", "--refresh", server.package_name or ""]
+            package_name = ProcessManager._require_value(server.package_name, "package_name")
+            return ["uvx", "--refresh", "mcpo", "--", "uvx", "--refresh", package_name]
         if server.source_type == SourceType.GITHUB:
+            git_url = ProcessManager._require_value(server.git_url, "git_url")
+            executable_name = ProcessManager._require_value(server.executable_name, "executable_name")
             return [
                 "uvx",
                 "--refresh",
@@ -80,10 +95,12 @@ class ProcessManager:
                 "uvx",
                 "--refresh",
                 "--from",
-                f"git+{server.git_url}",
-                server.executable_name or "",
+                f"git+{git_url}",
+                executable_name,
             ]
         if server.source_type == SourceType.LOCAL:
+            local_path = ProcessManager._require_value(server.local_path, "local_path")
+            executable_name = ProcessManager._require_value(server.executable_name, "executable_name")
             return [
                 "uvx",
                 "--refresh",
@@ -92,8 +109,8 @@ class ProcessManager:
                 "uvx",
                 "--refresh",
                 "--from",
-                server.local_path or "",
-                server.executable_name or "",
+                local_path,
+                executable_name,
             ]
         raise ValueError("OPENAPI servers do not support subprocess refresh commands")
 
@@ -107,7 +124,10 @@ class ProcessManager:
 
         command = self.build_run_command(server)
         env = os.environ.copy()
-        env.update(json.loads(server.env_vars))
+        try:
+            env.update(json.loads(server.env_vars))
+        except JSONDecodeError as exc:
+            self._history[server.id].append(f"invalid_env_vars_json: {exc}")
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,

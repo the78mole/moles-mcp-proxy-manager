@@ -66,6 +66,10 @@ async function callAction(id: number, action: 'start' | 'stop' | 'update') {
   }
 }
 
+function openLogs(id: number) {
+  globalThis.window.open(`/api/v1/servers/${id}/logs`, '_blank')
+}
+
 onMounted(fetchServers)
 </script>
 
@@ -109,7 +113,7 @@ onMounted(fetchServers)
             <span v-if="loadingById[server.id]">Updating...</span>
             <span v-else>Update</span>
           </button>
-          <button class="rounded bg-slate-600 px-3 py-1 text-sm" @click="window.open(`/api/v1/servers/${server.id}/logs`, '_blank')">Logs</button>
+          <button class="rounded bg-slate-600 px-3 py-1 text-sm" @click="openLogs(server.id)">Logs</button>
         </div>
       </article>
     </section>

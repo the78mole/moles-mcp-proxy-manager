@@ -28,7 +28,7 @@ Backend API base URL: `http://localhost:8000/api/v1`
 ## Frontend (Vue 3 + Vite + TypeScript + Tailwind)
 
 ```bash
-cd /tmp/workspace/the78mole/moles-mcp-proxy-manager/frontend
+cd frontend
 npm install
 npm run dev
 ```

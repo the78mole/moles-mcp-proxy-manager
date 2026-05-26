@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.database import Base, engine
 from app.main import app, manager
 
-def test_create_server_and_update_openapi(monkeypatch) -> None:
+def test_openapi_server_creation_and_health_update(monkeypatch) -> None:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     payload = {
