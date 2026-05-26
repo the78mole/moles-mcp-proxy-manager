@@ -12,7 +12,7 @@ def _server(**kwargs):
         "executable_name": "vnbdigital-mcp",
         "git_url": "https://github.com/the78mole/vnbdigital-mcp",
         "local_path": "/tmp/local-mcp",
-        "target_port": 9000,
+        "slug": "vnbdigital",
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -20,11 +20,11 @@ def _server(**kwargs):
 
 def test_build_run_command_pypi() -> None:
     server = _server(source_type=SourceType.PYPI)
-    assert ProcessManager.build_run_command(server) == [
+    assert ProcessManager.build_run_command(server, 54321) == [
         "uvx",
         "mcpo",
         "--port",
-        "9000",
+        "54321",
         "--",
         "uvx",
         "vnbdigital-mcp",
@@ -33,11 +33,11 @@ def test_build_run_command_pypi() -> None:
 
 def test_build_run_command_github() -> None:
     server = _server(source_type=SourceType.GITHUB)
-    assert ProcessManager.build_run_command(server) == [
+    assert ProcessManager.build_run_command(server, 54322) == [
         "uvx",
         "mcpo",
         "--port",
-        "9000",
+        "54322",
         "--",
         "uvx",
         "--from",
@@ -59,3 +59,9 @@ def test_build_refresh_command_local() -> None:
         "/tmp/local-mcp",
         "vnbdigital-mcp",
     ]
+
+
+def test_find_free_port() -> None:
+    port = ProcessManager.find_free_port()
+    assert isinstance(port, int)
+    assert 1024 <= port <= 65535

@@ -2,11 +2,24 @@
 
 Unified management UI, runner, and reverse proxy for MCP and OpenAPI servers.
 
+## How it works
+
+Each MCP server is registered with a **URL slug** (e.g., `vnbdigital`, `filesystem`).  
+The manager runs on a single fixed port (default `8000`) and exposes every tool via a path-based gateway:
+
+```
+GET  /v1/mcp/{slug}/openapi.json  → served by that tool
+POST /v1/mcp/{slug}/...           → proxied to that tool
+```
+
+Open WebUI only ever needs to know **one hostname and port** — no per-tool port mapping required.
+
 ## Features
 
 - Register MCP servers from `PyPI`, `GitHub`, or `Local Path` sources.
 - Register `Native OpenAPI` upstream services.
 - Lifecycle controls: create, edit, delete, start, stop, update, logs.
+- Single-port reverse-proxy gateway: `GET|POST|… /v1/mcp/{slug}/{path}`.
 - Source-specific update behavior through `POST /api/v1/servers/{id}/update`.
 
 ## Backend (FastAPI + SQLite)
@@ -33,18 +46,24 @@ npm install
 npm run dev
 ```
 
-Frontend dev URL: `http://localhost:5173` (proxies `/api` to backend).
+Frontend dev URL: `http://localhost:5173` (proxies `/api` and `/v1` to backend).
 
 ## API Endpoints
 
-- `GET /api/v1/servers`
+Management API:
+
+- `GET  /api/v1/servers`
 - `POST /api/v1/servers`
-- `PUT /api/v1/servers/{id}`
+- `PUT  /api/v1/servers/{id}`
 - `DELETE /api/v1/servers/{id}`
 - `POST /api/v1/servers/{id}/start`
 - `POST /api/v1/servers/{id}/stop`
 - `POST /api/v1/servers/{id}/update`
-- `GET /api/v1/servers/{id}/logs`
+- `GET  /api/v1/servers/{id}/logs`
+
+Gateway (all HTTP methods):
+
+- `{METHOD} /v1/mcp/{slug}/{path}` — reverse-proxy to the registered tool
 
 ## Update Lifecycle
 
@@ -57,15 +76,24 @@ Frontend dev URL: `http://localhost:5173` (proxies `/api` to backend).
 
 ## Deployment & Networking Guide
 
-This section explains how to run `moles-mcp-proxy-manager` in Docker and how to configure networking so that Open WebUI can dynamically access the MCP/OpenAPI ports it manages.
+The manager uses a **single-port gateway** design: all registered tools are reachable through
+`http://<manager-host>:8000/v1/mcp/{slug}/…`. You only ever expose **one port** on the host,
+regardless of how many MCP tools are running internally.
 
-> **Key insight:** The manager may spawn MCP servers on arbitrary ports at runtime. The cleanest solutions (Scenario A and B) keep all MCP traffic on an internal Docker network, eliminating port conflicts on the host entirely. Scenario C is available when non-Docker clients also need direct access to those ports.
+Example Open WebUI tool URLs when three servers are registered:
+
+```
+http://moles-mcp-proxy-manager:8000/v1/mcp/vnbdigital/openapi.json
+http://moles-mcp-proxy-manager:8000/v1/mcp/filesystem/openapi.json
+http://moles-mcp-proxy-manager:8000/v1/mcp/weather/openapi.json
+```
 
 ---
 
 ### Scenario A: Shared Docker Compose Stack (Recommended)
 
-This is the cleanest approach. Both `open-webui` and `moles-mcp-proxy-manager` are defined in the same Compose file, so Docker automatically places them on a shared internal network. No individual MCP ports need to be published to the host machine.
+Place both containers in the same Compose file. Docker assigns them a shared internal network
+automatically — no host port exposure is needed for the MCP gateway.
 
 ```yaml
 # docker-compose.yml
@@ -73,7 +101,7 @@ services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     ports:
-      - "3000:8080"          # expose only the UI port to the host
+      - "3000:8080"          # expose only the UI to the host
     environment:
       - WEBUI_SECRET_KEY=change-me
     depends_on:
@@ -81,7 +109,8 @@ services:
 
   moles-mcp-proxy-manager:
     image: ghcr.io/the78mole/moles-mcp-proxy-manager:latest
-    # No host port bindings required — all MCP ports stay internal
+    ports:
+      - "8000:8000"          # single port for the entire gateway
     environment:
       - MANAGER_HOST=0.0.0.0
       - MANAGER_PORT=8000
@@ -93,21 +122,21 @@ Start the stack:
 docker compose up -d
 ```
 
-When registering a managed server in Open WebUI, use the **container name** as the hostname:
+In Open WebUI, register tools using the container name as the host:
 
 ```
-http://moles-mcp-proxy-manager:8000/openapi.json
+http://moles-mcp-proxy-manager:8000/v1/mcp/vnbdigital/openapi.json
+http://moles-mcp-proxy-manager:8000/v1/mcp/filesystem/openapi.json
 ```
-
-Because both containers share the same Compose network, Open WebUI reaches the manager — and every MCP port it binds — without any firewall rules or host-port exposure.
 
 ---
 
 ### Scenario B: Separate Containers via Shared Bridge Network
 
-Use this approach when your containers are managed independently (e.g., different Compose files or plain `docker run` commands) but you still want to avoid exposing internal MCP ports to the host.
+For independently managed containers, connect them to a named bridge network so they can still
+reach each other without exposing internal ports to the host.
 
-**Step 1 — Create an external bridge network (once):**
+**Step 1 — Create the shared network (once):**
 
 ```bash
 docker network create ai-network
@@ -116,10 +145,11 @@ docker network create ai-network
 **Step 2 — Start each container on that network:**
 
 ```bash
-# moles-mcp-proxy-manager
+# manager
 docker run -d \
   --name moles-mcp-proxy-manager \
   --network ai-network \
+  -p 8000:8000 \
   ghcr.io/the78mole/moles-mcp-proxy-manager:latest
 
 # Open WebUI
@@ -130,19 +160,18 @@ docker run -d \
   ghcr.io/open-webui/open-webui:main
 ```
 
-Open WebUI can reach the manager via:
+Open WebUI reaches all tools through:
 
 ```
-http://moles-mcp-proxy-manager:8000
+http://moles-mcp-proxy-manager:8000/v1/mcp/{slug}/openapi.json
 ```
-
-All dynamically opened MCP ports remain inside the `ai-network` bridge and are never published to the host. This avoids port conflicts while preserving full container isolation between unrelated stacks.
 
 ---
 
 ### Scenario C: Host Network Mode (Linux Only)
 
-Host network mode binds the manager directly to the host's network interface, bypassing Docker's network isolation. Every port opened by the manager — including dynamically spawned MCP server ports — is immediately reachable on the host.
+Bind the manager directly to the host network interface. Useful when non-Docker clients (IDE
+plugins, CLI agents, native Open WebUI) also need to reach the MCP servers.
 
 **Using `docker run`:**
 
@@ -162,23 +191,23 @@ services:
     network_mode: "host"
 ```
 
-Any MCP server spawned on port `N` is immediately accessible at:
+Every registered tool is immediately accessible on the host:
 
 ```
-http://localhost:N
-http://<server-ip>:N
+http://localhost:8000/v1/mcp/vnbdigital/openapi.json
+http://<server-ip>:8000/v1/mcp/filesystem/openapi.json
 ```
 
-This is ideal when non-Docker applications (e.g., a locally running IDE plugin, CLI agent, or native Open WebUI) also need direct access to the MCP servers. Note that `--network host` is only supported on Linux; on macOS and Windows it has no effect.
+> `--network host` is supported on Linux only; on macOS/Windows it has no effect.
 
 ---
 
-### Open WebUI Integration Summary
+### Deployment Scenarios Summary
 
-| Deployment Scenario | Host Ports Exposed? | Open WebUI Target URL |
+| Scenario | Host Ports Exposed | Open WebUI Tool URL pattern |
 |---|---|---|
-| **A — Shared Compose Stack** | No (UI only) | `http://moles-mcp-proxy-manager:<PORT>` |
-| **B — Shared Bridge Network** | No (UI only) | `http://moles-mcp-proxy-manager:<PORT>` |
-| **C — Host Network (Linux)** | Yes (all ports) | `http://localhost:<PORT>` or `http://<server-ip>:<PORT>` |
+| **A — Shared Compose Stack** | `8000` only | `http://moles-mcp-proxy-manager:8000/v1/mcp/{slug}/openapi.json` |
+| **B — Shared Bridge Network** | `8000` only | `http://moles-mcp-proxy-manager:8000/v1/mcp/{slug}/openapi.json` |
+| **C — Host Network (Linux)** | `8000` on host | `http://localhost:8000/v1/mcp/{slug}/openapi.json` |
 
-> Replace `<PORT>` with the manager API port (default `8000`) or any specific MCP server port registered through the manager.
+In all scenarios you expose exactly **one** port and use path-based routing to reach any number of tools.

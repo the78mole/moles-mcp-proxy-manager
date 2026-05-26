@@ -19,6 +19,7 @@ class Server(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(20), nullable=False)
     package_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     executable_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -26,7 +27,6 @@ class Server(Base):
     local_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     backend_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     env_vars: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
-    target_port: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="stopped", nullable=False)
     last_health_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)

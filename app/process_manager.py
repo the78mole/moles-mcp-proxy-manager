@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import socket
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from json import JSONDecodeError
@@ -14,6 +15,7 @@ from app.models import Server, SourceType
 @dataclass
 class ProcessHandle:
     process: asyncio.subprocess.Process
+    internal_port: int
     logs: Deque[str] = field(default_factory=lambda: deque(maxlen=500))
 
 
@@ -45,10 +47,18 @@ class ProcessManager:
         return value
 
     @staticmethod
-    def build_run_command(server: Server) -> list[str]:
+    def find_free_port() -> int:
+        """Bind to port 0, let the OS pick a free port, then release it."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    @staticmethod
+    def build_run_command(server: Server, internal_port: int) -> list[str]:
+        port_str = str(internal_port)
         if server.source_type == SourceType.PYPI:
             package_name = ProcessManager._require_value(server.package_name, "package_name")
-            return ["uvx", "mcpo", "--port", str(server.target_port), "--", "uvx", package_name]
+            return ["uvx", "mcpo", "--port", port_str, "--", "uvx", package_name]
         if server.source_type == SourceType.GITHUB:
             git_url = ProcessManager._require_value(server.git_url, "git_url")
             executable_name = ProcessManager._require_value(server.executable_name, "executable_name")
@@ -56,7 +66,7 @@ class ProcessManager:
                 "uvx",
                 "mcpo",
                 "--port",
-                str(server.target_port),
+                port_str,
                 "--",
                 "uvx",
                 "--from",
@@ -70,7 +80,7 @@ class ProcessManager:
                 "uvx",
                 "mcpo",
                 "--port",
-                str(server.target_port),
+                port_str,
                 "--",
                 "uvx",
                 "--from",
@@ -114,6 +124,10 @@ class ProcessManager:
             ]
         raise ValueError("OPENAPI servers do not support subprocess refresh commands")
 
+    def get_internal_port(self, server_id: int) -> int | None:
+        handle = self._processes.get(server_id)
+        return handle.internal_port if handle else None
+
     async def start_server(self, server: Server) -> None:
         if server.source_type == SourceType.OPENAPI:
             await self.health_check(server)
@@ -122,19 +136,20 @@ class ProcessManager:
         if server.id in self._processes:
             return
 
-        command = self.build_run_command(server)
+        internal_port = self.find_free_port()
+        command = self.build_run_command(server, internal_port)
         env = os.environ.copy()
         try:
             env.update(json.loads(server.env_vars))
         except JSONDecodeError as exc:
-            self._history[server.id].append(f"invalid_env_vars_json: {exc}")
+            self._history[server.id].append(f"Failed to parse env_vars JSON: {exc}")
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
         )
-        handle = ProcessHandle(process=process)
+        handle = ProcessHandle(process=process, internal_port=internal_port)
         self._processes[server.id] = handle
         asyncio.create_task(self._collect_stream(server.id, process.stdout, handle.logs))
         asyncio.create_task(self._collect_stream(server.id, process.stderr, handle.logs))
