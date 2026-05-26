@@ -1,0 +1,32 @@
+[project]
+name = "moles-mcp-proxy-manager"
+version = "0.1.0"
+description = "Unified UI, runner, and reverse proxy manager for MCP and OpenAPI servers"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.35.0",
+  "sqlalchemy>=2.0.0",
+  "httpx>=0.28.0",
+  "pydantic>=2.8.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+package = true
+
+[tool.uv.workspace]
+members = ["."]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
