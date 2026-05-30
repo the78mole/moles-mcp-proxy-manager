@@ -1,12 +1,19 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+const backendPort = process.env.BACKEND_PORT ?? '8001'
+const frontendPort = parseInt(process.env.PORT ?? '5174', 10)
+
 export default defineConfig({
   plugins: [vue()],
   server: {
+    port: frontendPort,
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/v1': 'http://localhost:8000'
+      '/api': {
+        target: `http://localhost:${backendPort}`,
+        ws: true,
+      },
+      '/v1': `http://localhost:${backendPort}`,
     }
   }
 })

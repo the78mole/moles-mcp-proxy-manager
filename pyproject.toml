@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115.0",
-  "uvicorn>=0.35.0",
+  "uvicorn[standard]>=0.35.0",
   "sqlalchemy>=2.0.0",
   "httpx>=0.28.0",
   "pydantic>=2.8.0",
@@ -26,6 +26,9 @@ package = true
 
 [tool.uv.workspace]
 members = ["."]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [build-system]
 requires = ["hatchling>=1.25.0"]

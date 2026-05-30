@@ -17,6 +17,7 @@ class ServerBase(BaseModel):
     local_path: str | None = None
     backend_url: HttpUrl | None = None
     env_vars: dict[str, str] = Field(default_factory=dict)
+    args: list[str] = Field(default_factory=list)
 
     @field_validator("slug")
     @classmethod
@@ -39,6 +40,7 @@ class ServerUpdate(BaseModel):
     local_path: str | None = None
     backend_url: HttpUrl | None = None
     env_vars: dict[str, str] | None = None
+    args: list[str] | None = None
 
     @field_validator("slug")
     @classmethod

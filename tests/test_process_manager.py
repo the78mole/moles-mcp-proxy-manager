@@ -65,3 +65,27 @@ def test_find_free_port() -> None:
     port = ProcessManager.find_free_port()
     assert isinstance(port, int)
     assert 1024 <= port <= 65535
+
+
+def test_build_run_command_npm() -> None:
+    server = _server(source_type=SourceType.NPM, package_name="bookstack-mcp-server")
+    assert ProcessManager.build_run_command(server, 54325) == [
+        "uvx",
+        "mcpo",
+        "--port",
+        "54325",
+        "--",
+        "npx",
+        "--yes",
+        "bookstack-mcp-server",
+    ]
+
+
+def test_build_refresh_command_npm() -> None:
+    server = _server(source_type=SourceType.NPM, package_name="bookstack-mcp-server")
+    assert ProcessManager.build_refresh_command(server) == [
+        "npm",
+        "install",
+        "-g",
+        "bookstack-mcp-server@latest",
+    ]

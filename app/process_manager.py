@@ -23,6 +23,7 @@ class ProcessManager:
     def __init__(self) -> None:
         self._processes: dict[int, ProcessHandle] = {}
         self._history: dict[int, Deque[str]] = defaultdict(lambda: deque(maxlen=500))
+        self._log_queues: set[asyncio.Queue] = set()
 
     async def _collect_stream(
         self,
@@ -39,6 +40,8 @@ class ProcessManager:
             text = line.decode(errors="replace").rstrip()
             destination.append(text)
             self._history[server_id].append(text)
+            for q in list(self._log_queues):
+                q.put_nowait({"id": server_id, "line": text})
 
     @staticmethod
     def _require_value(value: str | None, field_name: str) -> str:
@@ -56,37 +59,29 @@ class ProcessManager:
     @staticmethod
     def build_run_command(server: Server, internal_port: int) -> list[str]:
         port_str = str(internal_port)
+        extra_args: list[str] = json.loads(getattr(server, "args", None) or "[]")
         if server.source_type == SourceType.PYPI:
             package_name = ProcessManager._require_value(server.package_name, "package_name")
-            return ["uvx", "mcpo", "--port", port_str, "--", "uvx", package_name]
+            return ["uvx", "mcpo", "--port", port_str, "--", "uvx", package_name, *extra_args]
         if server.source_type == SourceType.GITHUB:
             git_url = ProcessManager._require_value(server.git_url, "git_url")
             executable_name = ProcessManager._require_value(server.executable_name, "executable_name")
             return [
-                "uvx",
-                "mcpo",
-                "--port",
-                port_str,
-                "--",
-                "uvx",
-                "--from",
-                f"git+{git_url}",
-                executable_name,
+                "uvx", "mcpo", "--port", port_str, "--",
+                "uvx", "--from", f"git+{git_url}", executable_name,
+                *extra_args,
             ]
         if server.source_type == SourceType.LOCAL:
             local_path = ProcessManager._require_value(server.local_path, "local_path")
             executable_name = ProcessManager._require_value(server.executable_name, "executable_name")
             return [
-                "uvx",
-                "mcpo",
-                "--port",
-                port_str,
-                "--",
-                "uvx",
-                "--from",
-                local_path,
-                executable_name,
+                "uvx", "mcpo", "--port", port_str, "--",
+                "uvx", "--from", local_path, executable_name,
+                *extra_args,
             ]
+        if server.source_type == SourceType.NPM:
+            package_name = ProcessManager._require_value(server.package_name, "package_name")
+            return ["uvx", "mcpo", "--port", port_str, "--", "npx", "--yes", package_name, *extra_args]
         raise ValueError("OPENAPI servers do not support subprocess run commands")
 
     @staticmethod
@@ -122,6 +117,9 @@ class ProcessManager:
                 local_path,
                 executable_name,
             ]
+        if server.source_type == SourceType.NPM:
+            package_name = ProcessManager._require_value(server.package_name, "package_name")
+            return ["npm", "install", "-g", f"{package_name}@latest"]
         raise ValueError("OPENAPI servers do not support subprocess refresh commands")
 
     def get_internal_port(self, server_id: int) -> int | None:
@@ -148,6 +146,7 @@ class ProcessManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            close_fds=True,
         )
         handle = ProcessHandle(process=process, internal_port=internal_port)
         self._processes[server.id] = handle
@@ -203,6 +202,14 @@ class ProcessManager:
             self._history[server.id].append(stderr.decode(errors="replace").strip())
         await self.start_server(server)
         return "updated"
+
+    def subscribe_logs(self) -> "asyncio.Queue[dict]": 
+        q: asyncio.Queue[dict] = asyncio.Queue()
+        self._log_queues.add(q)
+        return q
+
+    def unsubscribe_logs(self, q: "asyncio.Queue[dict]") -> None:
+        self._log_queues.discard(q)
 
     def get_logs(self, server_id: int) -> list[str]:
         active = self._processes.get(server_id)

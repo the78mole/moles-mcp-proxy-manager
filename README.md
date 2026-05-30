@@ -5,7 +5,7 @@ Unified management UI, runner, and reverse proxy for MCP and OpenAPI servers.
 ## How it works
 
 Each MCP server is registered with a **URL slug** (e.g., `vnbdigital`, `filesystem`).  
-The manager runs on a single fixed port (default `8000`) and exposes every tool via a path-based gateway:
+The manager runs on a single fixed port (default `8001`) and exposes every tool via a path-based gateway:
 
 ```
 GET  /v1/mcp/{slug}/openapi.json  → served by that tool
@@ -33,10 +33,20 @@ uv sync --group dev
 ### Run backend
 
 ```bash
-uv run uvicorn app.main:app --reload
+# default port 8001
+uv run python -m app.main
+
+# custom port
+MANAGER_HOST=0.0.0.0 MANAGER_PORT=9000 uv run python -m app.main
 ```
 
-Backend API base URL: `http://localhost:8000/api/v1`
+Or via uvicorn directly (port must be passed as flag):
+
+```bash
+uv run uvicorn app.main:app --reload --port 8001
+```
+
+Backend API base URL: `http://localhost:${MANAGER_PORT:-8001}/api/v1`
 
 ## Frontend (Vue 3 + Vite + TypeScript + Tailwind)
 
@@ -44,9 +54,12 @@ Backend API base URL: `http://localhost:8000/api/v1`
 cd frontend
 npm install
 npm run dev
+
+# custom ports
+PORT=5174 BACKEND_PORT=8001 npm run dev
 ```
 
-Frontend dev URL: `http://localhost:5173` (proxies `/api` and `/v1` to backend).
+Frontend dev URL: `http://localhost:${PORT:-5174}` (proxies `/api` and `/v1` to backend).
 
 ## API Endpoints
 
@@ -77,15 +90,15 @@ Gateway (all HTTP methods):
 ## Deployment & Networking Guide
 
 The manager uses a **single-port gateway** design: all registered tools are reachable through
-`http://<manager-host>:8000/v1/mcp/{slug}/…`. You only ever expose **one port** on the host,
+`http://<manager-host>:8001/v1/mcp/{slug}/…`. You only ever expose **one port** on the host,
 regardless of how many MCP tools are running internally.
 
 Example Open WebUI tool URLs when three servers are registered:
 
 ```
-http://moles-mcp-proxy-manager:8000/v1/mcp/vnbdigital/openapi.json
-http://moles-mcp-proxy-manager:8000/v1/mcp/filesystem/openapi.json
-http://moles-mcp-proxy-manager:8000/v1/mcp/weather/openapi.json
+http://moles-mcp-proxy-manager:8001/v1/mcp/vnbdigital/openapi.json
+http://moles-mcp-proxy-manager:8001/v1/mcp/filesystem/openapi.json
+http://moles-mcp-proxy-manager:8001/v1/mcp/weather/openapi.json
 ```
 
 ---
@@ -110,10 +123,10 @@ services:
   moles-mcp-proxy-manager:
     image: ghcr.io/the78mole/moles-mcp-proxy-manager:latest
     ports:
-      - "8000:8000"          # single port for the entire gateway
+      - "8001:8001"          # single port for the entire gateway
     environment:
       - MANAGER_HOST=0.0.0.0
-      - MANAGER_PORT=8000
+      - MANAGER_PORT=8001
 ```
 
 Start the stack:
@@ -125,8 +138,8 @@ docker compose up -d
 In Open WebUI, register tools using the container name as the host:
 
 ```
-http://moles-mcp-proxy-manager:8000/v1/mcp/vnbdigital/openapi.json
-http://moles-mcp-proxy-manager:8000/v1/mcp/filesystem/openapi.json
+http://moles-mcp-proxy-manager:8001/v1/mcp/vnbdigital/openapi.json
+http://moles-mcp-proxy-manager:8001/v1/mcp/filesystem/openapi.json
 ```
 
 ---
@@ -149,7 +162,7 @@ docker network create ai-network
 docker run -d \
   --name moles-mcp-proxy-manager \
   --network ai-network \
-  -p 8000:8000 \
+  -p 8001:8001 \
   ghcr.io/the78mole/moles-mcp-proxy-manager:latest
 
 # Open WebUI
@@ -163,7 +176,7 @@ docker run -d \
 Open WebUI reaches all tools through:
 
 ```
-http://moles-mcp-proxy-manager:8000/v1/mcp/{slug}/openapi.json
+http://moles-mcp-proxy-manager:8001/v1/mcp/{slug}/openapi.json
 ```
 
 ---
@@ -194,8 +207,8 @@ services:
 Every registered tool is immediately accessible on the host:
 
 ```
-http://localhost:8000/v1/mcp/vnbdigital/openapi.json
-http://<server-ip>:8000/v1/mcp/filesystem/openapi.json
+http://localhost:8001/v1/mcp/vnbdigital/openapi.json
+http://<server-ip>:8001/v1/mcp/filesystem/openapi.json
 ```
 
 > `--network host` is supported on Linux only; on macOS/Windows it has no effect.
