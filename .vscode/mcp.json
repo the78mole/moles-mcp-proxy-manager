@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "test-server": {
+      "type": "http",
+      "url": "http://localhost:8001/v1/mcp/test-server"
+    },
+    "bookstack": {
+      "type": "http",
+      "url": "http://localhost:8001/v1/mcp/bookstack"
+    }
+  }
+}
